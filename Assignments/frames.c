@@ -326,16 +326,19 @@ void service_mem_access(int addr, char mode)
 	if(!present) {
 		++NUM_MISSES;
 		int free_frame = evict(PN); // evict and reutrn the freed frame or return a free frame if already present
-		inverted_page_table[free_frame] = 4 * PN + 2 + 0; // clock bit = 1 , dirty bit = 0
+		inverted_page_table[free_frame] = 4 * PN + 0 + 0; // clock bit = 1 , dirty bit = 0
 		page_table[PN] = (int16_t) (2 * free_frame + 1);
 		PFN = free_frame;
+	}
+	else if(replacement_stratergy == 2) {
+		inverted_page_table[PFN] |= 2;
 	}
 
 
 	if(replacement_stratergy == 3) {
 		last_used_time[PFN] = global_timer++;
 	}
-	inverted_page_table[PFN] |= 2;
+
 
 	if(mode == 'W') {
 		inverted_page_table[PFN] |= 1; // set dirty bit = 1
@@ -377,7 +380,7 @@ int evict(int REQUESTED_PN)
 					break;
 				}
 			}
-			printf("Evicted Frame No: %d\n", free_frame);
+			//printf("Evicted Frame No: %d\n", free_frame);
 			break;
 		}
 
@@ -490,11 +493,12 @@ int evict(int REQUESTED_PN)
 int main(int argc, char* argv[]) 
 {
 
+	//freopen("output.txt", "w", stdout);
 
 	init(argc, argv);
 
 
-	for(int i = 0; i < NUM_REQUESTS && i < 1000000; i++) {
+	for(int i = 0; i < NUM_REQUESTS; i++) {
 		//printf("%d %c\n", memory_accesses_locations[i], memory_accesses_modes[i]);
 		service_mem_access(memory_accesses_locations[i], memory_accesses_modes[i]);
 
