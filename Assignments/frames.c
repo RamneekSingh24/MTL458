@@ -96,7 +96,7 @@ void init(int argc, char* argv[])
 		}
 	}
 	if(replacement_stratergy == -1) {
-		printf("Invalid input\n");
+		printf("Invalid arguments\n");
 		exit(1);
 	}
 
@@ -166,7 +166,7 @@ void init_OPT(void)
 	}
 
 	for(int i = 0; i < NUM_REQUESTS; i++) {
-		num_references[memory_accesses_locations[i] >> PN_SHIFT]++;
+		num_references[(memory_accesses_locations[i] >> PN_SHIFT)]++;
 	}
 
 	for(int i = 0; i < NUM_PAGES; i++) {
@@ -183,7 +183,7 @@ void init_OPT(void)
 	}
 
 	for(int i = 0; i < NUM_PAGES; i++) {
-		reference_times[i][num_references[i]] = -1;
+		reference_times[i][num_references[i]] = -1; // no furthur requests
 	}
 
 	free(num_references);
@@ -219,6 +219,12 @@ void take_input(char* INPUT_FILE)
 
     while ((read = getline(&line, &len, fp)) != -1) {
 
+    	if(line == NULL) {
+    		break;
+    	}
+    	if(line[0] != '0') {
+    		break;
+    	}
 
         char* token = strtok(line, " \t");
 
@@ -271,13 +277,15 @@ void take_input(char* INPUT_FILE)
 
 void init_page_table(void) 
 {
-	// Number of Entries = 2^20 
+	// Number of Pages = 2^20 
+
 	// MAX_NUM_OF_FRAMES = 1000
 	// So MAX 10 bits needed for locating frame
 	// 1 present bit
 	// Total 11 bits
+
 	// We use int16_t as an entry 
-	// [10 bit PFN ,present_bit,valid_bit]
+	// [10 bit PFN ,present_bit]
 
 	int NUM_ENTRIES = 1 << (VM_WIDTH - PN_SHIFT); 
 
@@ -295,6 +303,7 @@ void init_frames()
 {	
 
 	// [20 bit PN,clock set bit,dity bit]
+
 	inverted_page_table = malloc(NUM_FRAMES * sizeof(int));
 	for(int i = 0; i < NUM_FRAMES; i++) {
 		inverted_page_table[i] = 0;
@@ -325,18 +334,27 @@ void service_mem_access(int addr, char mode)
 
 	if(!present) {
 		++NUM_MISSES;
-		int free_frame = evict(PN); // evict and reutrn the freed frame or return a free frame if already present
-		inverted_page_table[free_frame] = 4 * PN + 0 + 0; // clock bit = 1 , dirty bit = 0
+
+		int replacement_done = 1; // for checking cold start in clock replacement
+		if(num_free_frames > 0) {
+			replacement_done = 0;
+		}
+
+		int free_frame = evict(PN); // evict and return the freed frame or return a free frame if already present
+
+		// clock bit is not set 1 on assignment in case of cold start
+		inverted_page_table[free_frame] = 4 * PN + 2*replacement_done + 0; // PN, clock bit  , dirty bit 
 		page_table[PN] = (int16_t) (2 * free_frame + 1);
 		PFN = free_frame;
 	}
+	// if already present then set clock_bit = 1
 	else if(replacement_stratergy == 2) {
 		inverted_page_table[PFN] |= 2;
 	}
 
 
 	if(replacement_stratergy == 3) {
-		last_used_time[PFN] = global_timer++;
+		last_used_time[PFN] = global_timer++;  // set last used time
 	}
 
 
@@ -375,9 +393,9 @@ int evict(int REQUESTED_PN)
 					MAX_RFRT = rfr_t;
 					free_frame = i;
 				}
-				if(rfr_t < 0) {
-					free_frame = i; // MAY CHANGE , CURRENTLY RETURNING FRAME WITH LEAST FRAME_Number
-					break;
+				if(rfr_t < 0) {		
+					free_frame = i; // in case there are pages which won't be accessed in the future, we evict					
+					break;			// the page with the least PFN
 				}
 			}
 			//printf("Evicted Frame No: %d\n", free_frame);
@@ -409,7 +427,7 @@ int evict(int REQUESTED_PN)
 		}
 
 		case 2: {
-			// clock
+			// CLOCK
 
 			int IVT_PTE = inverted_page_table[clock_idx];
 
@@ -461,8 +479,11 @@ int evict(int REQUESTED_PN)
 	int EVICTED_PN = EVICTED_FRAME_IVT_ENTRY >> 2;
 	page_table[EVICTED_PN] = 0;
 
+	//printf("%d %d\n", EVICTED_PN, dirty_bit);
+
 	if(dirty_bit) {
 		++NUM_WRITES;
+
 	}
 	else{
 		++NUM_DROPS;
@@ -471,18 +492,20 @@ int evict(int REQUESTED_PN)
 	if(verbose_MODE) {
 
 		if(!dirty_bit) {
-			printf("Page 0x%x was read from disk, page 0x%x was dropped (it was not dirty).\n", REQUESTED_PN, EVICTED_PN);
+			printf("Page 0x%05x was read from disk, page 0x%05x was dropped (it was not dirty).\n", 
+				REQUESTED_PN, EVICTED_PN);
 		}
 
 		else{
-			printf("Page 0x%x was read from disk, page 0x%x was written to the disk.\n", REQUESTED_PN, EVICTED_PN);
+			printf("Page 0x%05x was read from disk, page 0x%05x was written to the disk.\n", 
+				REQUESTED_PN, EVICTED_PN);
 		}
 		
 		
 
 	}
 
-
+	//printf("%d\n", free_frame);
 	return free_frame;
 
 }
@@ -499,7 +522,7 @@ int main(int argc, char* argv[])
 
 
 	for(int i = 0; i < NUM_REQUESTS; i++) {
-		//printf("%d %c\n", memory_accesses_locations[i], memory_accesses_modes[i]);
+		//printf("itr no: %d\n", i);
 		service_mem_access(memory_accesses_locations[i], memory_accesses_modes[i]);
 
 	}
